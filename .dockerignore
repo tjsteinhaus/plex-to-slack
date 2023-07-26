@@ -1,0 +1,10 @@
+# Ignore Everything
+**
+
+# Allow root level files and directories
+!/package.json
+!/yarn.lock
+!/tsconfig.json
+!.eslintrc
+
+!/src
