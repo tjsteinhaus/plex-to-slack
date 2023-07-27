@@ -2,9 +2,9 @@ import { FastifyInstance } from "fastify"
 import { PlexPayload } from "./types"
 import { WebClient } from "@slack/web-api"
 import multer from "fastify-multer"
-import { notifySlack } from "./slack"
+import { SlackBlocks, movieBlocks, notifySlack, tvBlocks } from "./slack"
 const upload = multer({storage: multer.memoryStorage()})
-import { formatMovieTitle, formatTVTitle } from "./plex"
+import { mapDefaultData, mapMovieData, mapTvData } from "./plex"
 
 export default async function routes(
     fastify: FastifyInstance,
@@ -24,7 +24,6 @@ export default async function routes(
         },
         async (request, reply): Promise<void> => {
             const payload: PlexPayload = JSON.parse(request.body.payload)
-            console.log(payload)
 
             const isVideo = ['movie', 'episode', 'season'].includes(payload.Metadata.type)
             const isTV = ['episode', 'season'].includes(payload.Metadata.type)
@@ -33,56 +32,25 @@ export default async function routes(
             if (!payload.user || !payload.Metadata || !(isAudio || isVideo)) {
                 return reply.send(400)
             }
-
-            const user = payload.Account.title
-            const player = payload.Player.title
-            const server = payload.Server.title
-            const rating = payload.Metadata.rating
-            const eventType = payload.event
-
-            let message = `${user} `
-            switch(eventType) {
-                case 'media.pause':
-                    message += `paused`
-                break
-                case 'media.play':
-                    message += `played`
-                break
-                case 'media.rate':
-                    message += `rated`
-                break
-                case 'media.resume':
-                    message += `resumed`
-                break
-                case 'media.stop':
-                    message += `stopped`
-                break
-                case 'media.scrobble':
-                    message += `finished watching`
-                break
-                default: 
-                    console.log(`Event Type: ${eventType} is not supported.`)
-                    return reply.send(400)
-            }
+            
+            let blocks: SlackBlocks
+            const getDefaultData = mapDefaultData(payload)
             if (isTV) {
-                message += ` ${formatTVTitle(payload.Metadata)}`
+                const getTvData = mapTvData(payload.Metadata)
+                blocks = tvBlocks({
+                    ...getTvData,
+                    ...getDefaultData
+                })
             } else {
-                message += ` ${formatMovieTitle(payload.Metadata)}`
+                const getMovieData = mapMovieData(payload.Metadata)
+                blocks = movieBlocks({
+                    ...getMovieData,
+                    ...getDefaultData
+                })
             }
-
-            if (eventType === 'media.rate' && rating > 0) {
-                let stars = ``
-                for(let i = 0;i < rating / 2;i++) {
-                    stars += `:star:`
-                }
-                message += `${isTV ? '\n' : ''} ${stars}`
-            }
-
-            const footer = `${eventType} by ${user} on ${player} from ${server}.`
 
             notifySlack(slack, {
-                text: message,
-                footer
+                blocks
             })
             return reply.send(200)
         }
